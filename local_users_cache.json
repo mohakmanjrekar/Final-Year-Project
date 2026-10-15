@@ -1,0 +1,58 @@
+{
+  "hp5623699@gmail.com": {
+    "name": "System Administrator",
+    "email": "hp5623699@gmail.com",
+    "password_hash": "bd59b1d3556fddcd8e66da17e922e7ea825ffd1549558d7932bced5a41a2f71e",
+    "role": "admin",
+    "requested_role": "admin",
+    "status": "approved",
+    "department": "Administration",
+    "roll_or_id": "ADMIN-01",
+    "reason": "Primary System Administrator",
+    "created_at": "2026-10-08T18:44:05.440331Z",
+    "updated_at": "2026-10-08T18:44:05.440331Z",
+    "approved_by": "hp5623699@gmail.com"
+  },
+  "mohakmanjrekar@acpce.ac.in": {
+    "name": "Mohak Majrekar",
+    "email": "mohakmanjrekar@acpce.ac.in",
+    "password_hash": "d3d20dcdb22a248b029cba4271f9cac683c0bab98550db65f98d0cbd7ecae900",
+    "role": "student",
+    "requested_role": "student",
+    "status": "pending",
+    "department": "IT",
+    "roll_or_id": "35",
+    "reason": "",
+    "created_at": "2026-10-08T18:43:34.325471Z",
+    "updated_at": "2026-10-08T18:44:05.318366Z",
+    "approved_by": null
+  },
+  "shreyaspatil1408@gmail.com": {
+    "name": "Shreyas Patil",
+    "email": "shreyaspatil1408@gmail.com",
+    "password_hash": "c5bdb0127ed7ce97ecd362d27aee847deb2cd00b421cc43ecc6480ed0df478f1",
+    "role": "student",
+    "requested_role": "student",
+    "status": "pending",
+    "department": "IT",
+    "roll_or_id": "45",
+    "reason": "",
+    "created_at": "2026-10-15T06:12:23.531568Z",
+    "updated_at": "2026-10-15T06:19:18.037093Z",
+    "approved_by": null
+  },
+  "sanikaasawale54@gmail.com": {
+    "name": "Sanika Asawale",
+    "email": "sanikaasawale54@gmail.com",
+    "password_hash": "2b4b6e38c25b9d399d3cfe56974166d594c9e1d140e44e5aec23db63a61fce3f",
+    "role": "student",
+    "requested_role": "student",
+    "status": "pending",
+    "department": "IT",
+    "roll_or_id": "03",
+    "reason": "",
+    "created_at": "2026-10-15T06:21:04.053653Z",
+    "updated_at": "2026-10-15T06:21:11.311783Z",
+    "approved_by": null
+  }
+}

@@ -733,7 +733,7 @@ Portal Administrator (${ADMIN_EMAIL})`
 
         function renderPendingQueue() {
             const container = document.getElementById('pendingRequestsContainer');
-            const pendingUsers = allUsersList.filter(u => u.status === 'pending');
+            const pendingUsers = allUsersList.filter(u => u.status === 'pending' || u.status === 'unrequested');
 
             if (pendingUsers.length === 0) {
                 container.innerHTML = `
@@ -747,6 +747,7 @@ Portal Administrator (${ADMIN_EMAIL})`
 
             container.innerHTML = '';
             pendingUsers.forEach(u => {
+                const isUnrequested = (u.status === 'unrequested');
                 const reqRole = (u.requested_role || u.role || 'student').toLowerCase();
                 const item = document.createElement('div');
                 item.className = 'pending-request-item';
@@ -754,7 +755,10 @@ Portal Administrator (${ADMIN_EMAIL})`
                     <div class="pending-req-info">
                         <strong>
                             ${u.name || 'Unnamed User'}
-                            <span class="badge-role ${reqRole}">Requested: ${reqRole.toUpperCase()}</span>
+                            ${isUnrequested
+                                ? `<span class="badge-role" style="background: #fed7aa; color: #9a3412;"><i class="fa-solid fa-clock"></i> Signed Up • Role Unassigned</span>`
+                                : `<span class="badge-role ${reqRole}">Requested: ${reqRole.toUpperCase()}</span>`
+                            }
                         </strong>
                         <div class="pending-req-meta">
                             <span><i class="fa-solid fa-envelope"></i> ${u.email}</span>
@@ -798,7 +802,7 @@ Portal Administrator (${ADMIN_EMAIL})`
             const query = (document.getElementById('searchUsersInput').value || '').trim().toLowerCase();
 
             const filtered = allUsersList.filter(u => {
-                if (activeFilter === 'pending' && u.status !== 'pending') return false;
+                if (activeFilter === 'pending' && (u.status !== 'pending' && u.status !== 'unrequested')) return false;
                 if (activeFilter === 'rejected' && u.status !== 'rejected') return false;
                 if (activeFilter === 'faculty' && (u.role !== 'faculty' || u.status !== 'approved')) return false;
                 if (activeFilter === 'student' && (u.role !== 'student' || u.status !== 'approved')) return false;
@@ -822,6 +826,11 @@ Portal Administrator (${ADMIN_EMAIL})`
                 const status = (u.status || 'pending').toLowerCase();
                 const gmailApproveLink = buildApprovalGmailUrl(u, role);
 
+                let statusBadgeHtml = `<span class="badge-status ${status}">${status}</span>`;
+                if (status === 'unrequested') {
+                    statusBadgeHtml = `<span class="badge-status pending" style="background:#fed7aa; color:#9a3412;">ROLE UNASSIGNED</span>`;
+                }
+
                 const tr = document.createElement('tr');
                 tr.innerHTML = `
                     <td>
@@ -834,7 +843,7 @@ Portal Administrator (${ADMIN_EMAIL})`
                         </span>
                     </td>
                     <td>
-                        <span class="badge-status ${status}">${status}</span>
+                        ${statusBadgeHtml}
                     </td>
                     <td>
                         ${isPrimaryAdmin
@@ -1008,8 +1017,9 @@ Portal Administrator (${ADMIN_EMAIL})`
             showAdminToast('Refreshed user requests from MongoDB Atlas');
         });
 
-        // Initial Load
+        // Initial Load & Real-Time Auto-Refresh Polling every 8 seconds
         loadAdminUsers();
+        setInterval(loadAdminUsers, 8000);
     </script>
 </body>
 

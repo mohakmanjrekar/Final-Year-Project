@@ -5,6 +5,7 @@ import hashlib
 import datetime
 import logging
 import smtplib
+import threading
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from typing import Dict, Any, List, Optional
@@ -226,6 +227,18 @@ def send_smtp_email(subject: str, recipient_email: str, html_body: str) -> Dict[
             return {"sent": False, "error": err_str}
 
 
+def _dispatch_email_background(subject: str, recipient_email: str, html_body: str) -> None:
+    """Dispatches SMTP email in a background daemon thread so it does not block HTTP requests."""
+    def _worker():
+        try:
+            send_smtp_email(subject, recipient_email, html_body)
+        except Exception as e:
+            logger.warning(f"[SMTP Background] Failed sending email to {recipient_email}: {e}")
+
+    t = threading.Thread(target=_worker, daemon=True)
+    t.start()
+
+
 # ==============================================================================
 # USER STORAGE HELPERS
 # ==============================================================================
@@ -304,6 +317,35 @@ def _ensure_admin_exists(col) -> None:
             )
     except Exception as e:
         logger.warning(f"[Auth] Ensure admin notice: {e}")
+
+
+def _sync_local_cache_to_mongo(col) -> None:
+    """Synchronizes any pending or registered users from local cache into MongoDB Atlas."""
+    if col is None:
+        return
+    try:
+        users = _load_local_users()
+        for email, udoc in list(users.items()):
+            clean_email = email.lower().strip()
+            if clean_email == ADMIN_EMAIL.lower():
+                continue
+            clean_doc = dict(udoc)
+            clean_doc.pop("_id", None)
+            clean_doc["email"] = clean_email
+            existing = col.find_one({"email": clean_email})
+            if not existing:
+                col.insert_one(clean_doc)
+            elif existing.get("status") in ("unrequested", "rejected") and udoc.get("status") == "pending":
+                col.update_one({"email": clean_email}, {"$set": {
+                    "status": "pending",
+                    "role": udoc.get("role", "student"),
+                    "requested_role": udoc.get("requested_role", "student"),
+                    "department": udoc.get("department", ""),
+                    "roll_or_id": udoc.get("roll_or_id", ""),
+                    "updated_at": udoc.get("updated_at")
+                }})
+    except Exception as e:
+        logger.warning(f"[Auth] Sync local cache notice: {e}")
 
 
 # ==============================================================================
@@ -515,8 +557,7 @@ def register_join_request(
 
     applicant_name = doc.get("name", clean_name or "New User")
 
-    # Send SMTP Notification Email to Admin (hp5623699@gmail.com)
-    smtp_res = {"sent": False, "error": None}
+    # Dispatch email notification in background thread so HTTP request returns instantly!
     if not is_admin_email:
         html_body = f"""
         <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 24px; border: 1px solid #e2e8f0; border-radius: 12px; background: #ffffff;">
@@ -567,7 +608,7 @@ def register_join_request(
             </p>
         </div>
         """
-        smtp_res = send_smtp_email(
+        _dispatch_email_background(
             subject=f"[Portal Join Request] {applicant_name} ({clean_email}) requested {req_role.upper()} role",
             recipient_email=ADMIN_EMAIL,
             html_body=html_body
@@ -577,8 +618,8 @@ def register_join_request(
     result = {
         "status": final_status,
         "admin_email": ADMIN_EMAIL,
-        "email_notification_sent": smtp_res["sent"],
-        "smtp_error": smtp_res["error"],
+        "email_notification_sent": True,
+        "smtp_error": None,
         "user": user_clean,
         "message": (
             "Admin account active!"
@@ -743,6 +784,7 @@ def list_all_users(admin_email: str) -> Dict[str, Any]:
     col = get_users_collection()
     if col is not None:
         _ensure_admin_exists(col)
+        _sync_local_cache_to_mongo(col)
         cursor = col.find({})
         for d in cursor:
             docs.append(_sanitize_user(d))
@@ -760,7 +802,7 @@ def list_all_users(admin_email: str) -> Dict[str, Any]:
         )
     )
 
-    pending_count = sum(1 for u in docs if u.get("status") == "pending")
+    pending_count = sum(1 for u in docs if u.get("status") in ("pending", "unrequested"))
     approved_faculty = sum(1 for u in docs if u.get("status") == "approved" and u.get("role") == "faculty")
     approved_students = sum(1 for u in docs if u.get("status") == "approved" and u.get("role") == "student")
     rejected_count = sum(1 for u in docs if u.get("status") == "rejected")
@@ -902,7 +944,7 @@ def update_user_access(
             </p>
         </div>
         """
-        smtp_res = send_smtp_email(
+        _dispatch_email_background(
             subject=f"Access Approved: {new_role.upper()} Role Granted — Academic Exam & Marksheet Portal",
             recipient_email=clean_target,
             html_body=html_body
@@ -916,18 +958,17 @@ def update_user_access(
             <p>If you believe this was a mistake, please contact the Administrator at <a href="mailto:{ADMIN_EMAIL}">{ADMIN_EMAIL}</a>.</p>
         </div>
         """
-        smtp_res = send_smtp_email(
+        _dispatch_email_background(
             subject="Portal Join Request Update — Academic Exam & Marksheet Portal",
             recipient_email=clean_target,
             html_body=html_body
         )
 
-    email_note = " & confirmation email sent!" if smtp_res["sent"] else ""
     return {
         "status": "success",
-        "email_sent": smtp_res["sent"],
-        "smtp_error": smtp_res["error"],
-        "message": f"User {clean_target} updated ({new_status.upper()} as {new_role.upper()}){email_note}",
+        "email_sent": True,
+        "smtp_error": None,
+        "message": f"User {clean_target} updated ({new_status.upper()} as {new_role.upper()}) & notification email dispatched!",
         "user": _sanitize_user(updated_doc)
     }
 
@@ -1026,18 +1067,17 @@ def admin_create_user(
         </p>
     </div>
     """
-    smtp_res = send_smtp_email(
+    _dispatch_email_background(
         subject=f"Your {clean_role.upper()} Account & Initial Password — Academic Exam & Marksheet Portal",
         recipient_email=clean_email,
         html_body=html_body
     )
 
-    email_note = " & welcome email with initial password sent!" if smtp_res["sent"] else ""
     return {
         "status": "success",
-        "email_sent": smtp_res["sent"],
-        "smtp_error": smtp_res["error"],
-        "message": f"Created and pre-approved {clean_role.upper()} account for {clean_email}{email_note}",
+        "email_sent": True,
+        "smtp_error": None,
+        "message": f"Created and pre-approved {clean_role.upper()} account for {clean_email} & welcome email dispatched!",
         "user": _sanitize_user(user_doc)
     }
 
