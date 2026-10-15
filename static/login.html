@@ -853,8 +853,18 @@
             }
         }
 
+        let pendingPollInterval = null;
+
+        function stopPendingPolling() {
+            if (pendingPollInterval) {
+                clearInterval(pendingPollInterval);
+                pendingPollInterval = null;
+            }
+        }
+
         // Open Step 2: Role Request View after Sign Up
         function showRoleRequestStep(user) {
+            stopPendingPolling();
             activeSignupUser = user;
             hideAlert();
             authTabsBar.style.display = 'none';
@@ -868,7 +878,7 @@
             document.getElementById('lblSignedUpEmail').innerText = user.email || '';
         }
 
-        // Open Step 3: Pending Admin Approval View
+        // Open Step 3: Pending Admin Approval View (with automatic 4s real-time polling)
         function showPendingScreen(user, emailSent) {
             activeSignupUser = user;
             hideAlert();
@@ -891,9 +901,13 @@
                 emailBadge.innerText = 'Logged in Admin Queue (Dashboard)';
                 emailBadge.style.color = '#2563eb';
             }
+
+            // Start auto-polling every 4 seconds so the user is immediately logged in once Admin approves
+            startPendingPolling(user.email);
         }
 
         document.getElementById('btnBackToLogin').addEventListener('click', () => {
+            stopPendingPolling();
             switchTab('login');
         });
 
@@ -1031,33 +1045,60 @@
             }
         });
 
-        // 4. Check Live Approval Status Button
-        document.getElementById('btnCheckApprovalNow').addEventListener('click', async () => {
+        async function verifyPendingStatusNow(silent = false) {
             if (!activeSignupUser || !activeSignupUser.email) return;
             const btn = document.getElementById('btnCheckApprovalNow');
-            btn.disabled = true;
-            btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Checking Approval Status...';
+            if (!silent && btn) {
+                btn.disabled = true;
+                btn.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Checking Approval Status...';
+            }
 
             try {
-                const res = await fetch(`/api/auth/status?email=${encodeURIComponent(activeSignupUser.email)}`);
+                const res = await fetch(`/api/auth/status?email=${encodeURIComponent(activeSignupUser.email)}&_t=${Date.now()}`, {
+                    cache: 'no-store'
+                });
                 const data = await res.json();
 
                 if (data.status === 'approved' && data.user) {
+                    stopPendingPolling();
                     showAlert('success', `Approved! Admin (${ADMIN_EMAIL}) granted you ${data.user.role.toUpperCase()} access! Redirecting...`);
                     setTimeout(() => {
                         redirectByUserRole(data.user, data.token);
-                    }, 600);
+                    }, 500);
                 } else if (data.status === 'rejected') {
-                    showAlert('error', `Your request was declined by Admin (${ADMIN_EMAIL}).`);
+                    stopPendingPolling();
+                    showAlert('error', `Your join request was declined by the Administrator (${ADMIN_EMAIL}). You may submit a new role request.`);
+                    setTimeout(() => {
+                        showRoleRequestStep(data.user || activeSignupUser);
+                    }, 1200);
                 } else {
-                    showAlert('warning', `Still waiting for Admin (${ADMIN_EMAIL}) to accept your request on the Admin Page.`);
+                    if (!silent) {
+                        showAlert('warning', `Still waiting for Admin (${ADMIN_EMAIL}) to accept your request on the Admin Page.`);
+                    }
                 }
             } catch (err) {
-                showAlert('error', 'Could not check status right now.');
+                if (!silent) {
+                    showAlert('error', 'Could not check status right now.');
+                }
             } finally {
-                btn.disabled = false;
-                btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Check If Admin Approved My Request';
+                if (!silent && btn) {
+                    btn.disabled = false;
+                    btn.innerHTML = '<i class="fa-solid fa-rotate"></i> Check If Admin Approved My Request';
+                }
             }
+        }
+
+        function startPendingPolling(email) {
+            stopPendingPolling();
+            // Automatically poll every 4 seconds
+            pendingPollInterval = setInterval(() => {
+                verifyPendingStatusNow(true);
+            }, 4000);
+        }
+
+        // 4. Check Live Approval Status Button
+        document.getElementById('btnCheckApprovalNow').addEventListener('click', () => {
+            verifyPendingStatusNow(false);
         });
 
         // On initial load, check if already logged in and valid
@@ -1081,7 +1122,9 @@
                     return;
                 }
                 if (session && session.user && session.user.email) {
-                    const res = await fetch(`/api/auth/status?email=${encodeURIComponent(session.user.email)}`);
+                    const res = await fetch(`/api/auth/status?email=${encodeURIComponent(session.user.email)}&_t=${Date.now()}`, {
+                        cache: 'no-store'
+                    });
                     const data = await res.json();
                     if (data.status === 'approved' && data.user) {
                         redirectByUserRole(data.user, data.token);

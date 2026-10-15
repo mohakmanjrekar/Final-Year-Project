@@ -834,17 +834,23 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     }
 
-    btnChangeFile.addEventListener('click', () => {
+    function resetStudentUploadState() {
         currentUploadedData = null;
-        fileInput.value = '';
+        if (fileInput) fileInput.value = '';
         if (cameraInput) cameraInput.value = '';
-        filePreviewBar.style.display = 'none';
-        cropControlStrip.style.display = 'none';
+        if (filePreviewBar) filePreviewBar.style.display = 'none';
+        if (cropControlStrip) cropControlStrip.style.display = 'none';
         if (pageCropPreviewCard) pageCropPreviewCard.style.display = 'none';
-        dropZone.style.display = 'block';
-        btnConvert.disabled = true;
-        resultCard.style.display = 'none';
-    });
+        if (dropZone) dropZone.style.display = 'block';
+        if (btnConvert) btnConvert.disabled = true;
+        if (resultCard) resultCard.style.display = 'none';
+        renderStudentMetadata(null);
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+
+    if (btnChangeFile) {
+        btnChangeFile.addEventListener('click', resetStudentUploadState);
+    }
 
     ['dragenter', 'dragover'].forEach(name => {
         dropZone.addEventListener(name, (e) => {
@@ -1062,6 +1068,10 @@ document.addEventListener('DOMContentLoaded', () => {
                     'Submitted Successfully! 🎉',
                     `${currentMeta.student_name} (Roll: ${currentMeta.roll_no}) was stored in MongoDB Atlas.`
                 );
+                // Return student view back to initial clean state
+                setTimeout(() => {
+                    resetStudentUploadState();
+                }, 1500);
             } else {
                 alert(`Submission error: ${data.detail || 'Could not save marksheet'}`);
             }

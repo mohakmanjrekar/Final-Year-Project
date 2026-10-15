@@ -320,7 +320,7 @@ def _ensure_admin_exists(col) -> None:
 
 
 def _sync_local_cache_to_mongo(col) -> None:
-    """Synchronizes any pending or registered users from local cache into MongoDB Atlas."""
+    """Inserts users from local cache only if they do not exist at all in MongoDB Atlas."""
     if col is None:
         return
     try:
@@ -335,15 +335,6 @@ def _sync_local_cache_to_mongo(col) -> None:
             existing = col.find_one({"email": clean_email})
             if not existing:
                 col.insert_one(clean_doc)
-            elif existing.get("status") in ("unrequested", "rejected") and udoc.get("status") == "pending":
-                col.update_one({"email": clean_email}, {"$set": {
-                    "status": "pending",
-                    "role": udoc.get("role", "student"),
-                    "requested_role": udoc.get("requested_role", "student"),
-                    "department": udoc.get("department", ""),
-                    "roll_or_id": udoc.get("roll_or_id", ""),
-                    "updated_at": udoc.get("updated_at")
-                }})
     except Exception as e:
         logger.warning(f"[Auth] Sync local cache notice: {e}")
 

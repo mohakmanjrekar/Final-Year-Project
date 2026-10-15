@@ -886,8 +886,11 @@ def change_password_endpoint(req: ChangePasswordPayload):
 
 
 @app.get("/api/auth/status")
-def check_user_status_endpoint(email: str):
+def check_user_status_endpoint(email: str, response: Response):
     """Checks current approval status and role for a user email."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     try:
         from backend.services.auth_service import get_user_status
         return get_user_status(email=email)
@@ -899,8 +902,11 @@ def check_user_status_endpoint(email: str):
 
 
 @app.get("/api/admin/users")
-def list_admin_users_endpoint(admin_email: str):
+def list_admin_users_endpoint(admin_email: str, response: Response):
     """Returns all registered users and pending join requests for the Admin Control Panel."""
+    response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate, max-age=0"
+    response.headers["Pragma"] = "no-cache"
+    response.headers["Expires"] = "0"
     try:
         from backend.services.auth_service import list_all_users
         return list_all_users(admin_email=admin_email)

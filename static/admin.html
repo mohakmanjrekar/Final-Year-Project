@@ -694,38 +694,46 @@ Portal Administrator (${ADMIN_EMAIL})`
             return `https://mail.google.com/mail/?view=cm&fs=1&to=${encodeURIComponent(user.email)}&su=${subject}&body=${body}`;
         }
 
+        function recalculateKpisAndRender(smtpConfigured) {
+            const pendingUsers = allUsersList.filter(u => u.status === 'pending' || u.status === 'unrequested');
+            const approvedFaculty = allUsersList.filter(u => u.status === 'approved' && u.role === 'faculty');
+            const approvedStudents = allUsersList.filter(u => u.status === 'approved' && u.role === 'student');
+
+            document.getElementById('kpiPendingCount').innerText = pendingUsers.length;
+            document.getElementById('kpiFacultyCount').innerText = approvedFaculty.length;
+            document.getElementById('kpiStudentCount').innerText = approvedStudents.length;
+            document.getElementById('kpiTotalCount').innerText = allUsersList.length;
+            document.getElementById('badgePendingHeader').innerText = `${pendingUsers.length} waiting`;
+
+            const badgeSmtp = document.getElementById('badgeSmtpStatus');
+            if (badgeSmtp && typeof smtpConfigured === 'boolean') {
+                if (smtpConfigured) {
+                    badgeSmtp.innerText = 'SMTP Active & Ready';
+                    badgeSmtp.style.background = '#dcfce7';
+                    badgeSmtp.style.color = '#15803d';
+                } else {
+                    badgeSmtp.innerText = 'App Password Needed';
+                    badgeSmtp.style.background = '#fef3c7';
+                    badgeSmtp.style.color = '#b45309';
+                }
+            }
+
+            renderPendingQueue();
+            renderUsersTable();
+        }
+
         async function loadAdminUsers() {
             try {
-                const res = await fetch(`/api/admin/users?admin_email=${encodeURIComponent(ADMIN_EMAIL)}`);
+                const res = await fetch(`/api/admin/users?admin_email=${encodeURIComponent(ADMIN_EMAIL)}&_t=${Date.now()}`, {
+                    cache: 'no-store'
+                });
                 if (!res.ok) {
                     if (res.status === 403) window.location.href = '/login';
                     return;
                 }
                 const data = await res.json();
                 allUsersList = data.users || [];
-
-                const sum = data.summary || {};
-                document.getElementById('kpiPendingCount').innerText = sum.pending || 0;
-                document.getElementById('kpiFacultyCount').innerText = sum.approved_faculty || 0;
-                document.getElementById('kpiStudentCount').innerText = sum.approved_students || 0;
-                document.getElementById('kpiTotalCount').innerText = sum.total || 0;
-                document.getElementById('badgePendingHeader').innerText = `${sum.pending || 0} waiting`;
-
-                const badgeSmtp = document.getElementById('badgeSmtpStatus');
-                if (badgeSmtp) {
-                    if (data.smtp_configured) {
-                        badgeSmtp.innerText = 'SMTP Active & Ready';
-                        badgeSmtp.style.background = '#dcfce7';
-                        badgeSmtp.style.color = '#15803d';
-                    } else {
-                        badgeSmtp.innerText = 'App Password Needed';
-                        badgeSmtp.style.background = '#fef3c7';
-                        badgeSmtp.style.color = '#b45309';
-                    }
-                }
-
-                renderPendingQueue();
-                renderUsersTable();
+                recalculateKpisAndRender(data.smtp_configured);
             } catch (err) {
                 console.error('Failed to load users:', err);
             }
@@ -787,10 +795,10 @@ Portal Administrator (${ADMIN_EMAIL})`
                 const roleSelect = item.querySelector('select');
 
                 btnApprove.addEventListener('click', () => {
-                    updateUserAccess(u.email, 'approve', roleSelect.value);
+                    updateUserAccess(u.email, 'approve', roleSelect.value, btnApprove);
                 });
                 btnReject.addEventListener('click', () => {
-                    updateUserAccess(u.email, 'reject', roleSelect.value);
+                    updateUserAccess(u.email, 'reject', roleSelect.value, btnReject);
                 });
 
                 container.appendChild(item);
@@ -885,7 +893,7 @@ Portal Administrator (${ADMIN_EMAIL})`
                 const roleDropdown = tr.querySelector('[data-role-change]');
                 if (roleDropdown) {
                     roleDropdown.addEventListener('change', (e) => {
-                        updateUserAccess(u.email, 'change_role', e.target.value);
+                        updateUserAccess(u.email, 'change_role', e.target.value, roleDropdown);
                     });
                 }
 
@@ -893,14 +901,14 @@ Portal Administrator (${ADMIN_EMAIL})`
                 if (btnTblApprove) {
                     btnTblApprove.addEventListener('click', () => {
                         const selRole = roleDropdown ? roleDropdown.value : role;
-                        updateUserAccess(u.email, 'approve', selRole);
+                        updateUserAccess(u.email, 'approve', selRole, btnTblApprove);
                     });
                 }
 
                 const btnTblReject = tr.querySelector('[data-tbl-reject]');
                 if (btnTblReject) {
                     btnTblReject.addEventListener('click', () => {
-                        updateUserAccess(u.email, 'reject', role);
+                        updateUserAccess(u.email, 'reject', role, btnTblReject);
                     });
                 }
 
@@ -908,7 +916,7 @@ Portal Administrator (${ADMIN_EMAIL})`
                 if (btnTblDelete) {
                     btnTblDelete.addEventListener('click', () => {
                         if (confirm(`Delete account/request for ${u.email}?`)) {
-                            deleteUser(u.email);
+                            deleteUser(u.email, btnTblDelete);
                         }
                     });
                 }
@@ -917,7 +925,33 @@ Portal Administrator (${ADMIN_EMAIL})`
             });
         }
 
-        async function updateUserAccess(targetEmail, action, assignedRole) {
+        async function updateUserAccess(targetEmail, action, assignedRole, triggerBtn) {
+            const cleanTarget = (targetEmail || '').trim().toLowerCase();
+            const targetUserIdx = allUsersList.findIndex(u => (u.email || '').toLowerCase() === cleanTarget);
+
+            // Optimistic UI mutation: immediately reflect changes in pending queue & table
+            let previousUser = null;
+            if (targetUserIdx !== -1) {
+                previousUser = { ...allUsersList[targetUserIdx] };
+                const effectiveRole = (assignedRole || previousUser.role || previousUser.requested_role || 'student').toLowerCase();
+
+                if (action === 'approve') {
+                    allUsersList[targetUserIdx].status = 'approved';
+                    allUsersList[targetUserIdx].role = effectiveRole;
+                } else if (action === 'reject') {
+                    allUsersList[targetUserIdx].status = 'rejected';
+                } else if (action === 'change_role') {
+                    allUsersList[targetUserIdx].role = effectiveRole;
+                }
+
+                // Instantly re-render DOM and recalculate KPI stats
+                recalculateKpisAndRender();
+            }
+
+            if (triggerBtn) {
+                triggerBtn.disabled = true;
+            }
+
             try {
                 const res = await fetch('/api/admin/update-access', {
                     method: 'POST',
@@ -931,17 +965,43 @@ Portal Administrator (${ADMIN_EMAIL})`
                 });
                 const data = await res.json();
                 if (res.ok) {
-                    showAdminToast(data.message || 'User access updated!');
+                    showAdminToast(data.message || (action === 'approve' ? 'Approved & student added!' : 'User access updated!'));
+                    // Background sync with database
                     loadAdminUsers();
                 } else {
+                    // Rollback on server error
+                    if (previousUser && targetUserIdx !== -1) {
+                        allUsersList[targetUserIdx] = previousUser;
+                        recalculateKpisAndRender();
+                    }
                     alert(data.detail || 'Failed to update access');
                 }
             } catch (err) {
+                // Rollback on network error
+                if (previousUser && targetUserIdx !== -1) {
+                    allUsersList[targetUserIdx] = previousUser;
+                    recalculateKpisAndRender();
+                }
                 alert('Error updating user access.');
+            } finally {
+                if (triggerBtn) {
+                    triggerBtn.disabled = false;
+                }
             }
         }
 
-        async function deleteUser(targetEmail) {
+        async function deleteUser(targetEmail, triggerBtn) {
+            const cleanTarget = (targetEmail || '').trim().toLowerCase();
+            const targetUserIdx = allUsersList.findIndex(u => (u.email || '').toLowerCase() === cleanTarget);
+            let previousUser = null;
+            if (targetUserIdx !== -1) {
+                previousUser = allUsersList[targetUserIdx];
+                allUsersList.splice(targetUserIdx, 1);
+                recalculateKpisAndRender();
+            }
+
+            if (triggerBtn) triggerBtn.disabled = true;
+
             try {
                 const res = await fetch('/api/admin/delete-user', {
                     method: 'POST',
@@ -956,10 +1016,20 @@ Portal Administrator (${ADMIN_EMAIL})`
                     showAdminToast(data.message || 'User deleted.');
                     loadAdminUsers();
                 } else {
+                    if (previousUser) {
+                        allUsersList.push(previousUser);
+                        recalculateKpisAndRender();
+                    }
                     alert(data.detail || 'Failed to delete user.');
                 }
             } catch (err) {
+                if (previousUser) {
+                    allUsersList.push(previousUser);
+                    recalculateKpisAndRender();
+                }
                 alert('Error deleting user.');
+            } finally {
+                if (triggerBtn) triggerBtn.disabled = false;
             }
         }
 

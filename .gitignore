@@ -30,3 +30,5 @@ Thumbs.db
 scratch/
 .pytest_cache/
 testing/
+local_users_cache.json
+local_smtp_config.json
